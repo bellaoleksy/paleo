@@ -1,0 +1,21 @@
+variable,explanation
+lake_ID,"lake identifier (SkyPond, TheLoch)"
+age,extrapolated age from Pb210 analysis
+percent_C,percent carbon
+percent_N,percent nitrogen
+CN_ratio,carbon to nitrogen ratio
+del13C,carbon stable isotope signature (percent permil)
+del15N,nitrogen stable isotope signature (percent permit)
+fucoxanthin,fucoxanthin pigment (nmol per gram of organic carbon)
+diadinoxanthin,diadinoxanthin pigment (nmol per gram of organic carbon)
+myxoxanthophyll,myxoxanthophyll pigment nmol per gram of organic carbon)
+alloxanthin,alloxanthin pigment (nmol per gram of organic carbon)
+diatoxanthin,diatoxanthin pigment (nmol per gram of organic carbon)
+lutein,lutein pigment (nmol per gram of organic carbon)
+canthaxanthin,canthaxanthin pigment (nmol per gram of organic carbon)
+beta_carotene,beta carotene pigment (nmol per gram of organic carbon)
+echinenone,echinenone pigment (nmol per gram of organic carbon)
+pheo_a,pheophytin a pigment (nmol per gram of organic carbon)
+pheo_b,pheophytin b pigment (nmol per gram of organic carbon)
+chla_pheo,sum of chlorophyll a and pheophytin a pigment (nmol per gram of organic carbon)
+chlb_pheo,sum of chlorophyll b and pheophytin b pigment (nmol per gram of organic carbon)

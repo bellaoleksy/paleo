@@ -28,8 +28,6 @@ vignettes/*.pdf
 .Renviron
 #Ignore DS_Store!
 .DS_Store
-#Data folder
-/data
 #Trouble shooting folder
 /trouble shooting
 #archive folder
@@ -37,7 +35,7 @@ vignettes/*.pdf
 #results folder
 /results
 #raw data
-/data/raw
+/raw
 #Produced htmls from .Rmd docs
 *.html
 #Produced .docx

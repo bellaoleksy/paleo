@@ -1,0 +1,593 @@
+---
+title: "00_data_input_and_manipulation"
+author: "Bella Oleksy"
+date: "4/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Document history
+I created this R markdown file on April 12, 2019 after submitting the manuscript to Ecosystems on April 1, 2019.
+Based off of "SkyLochMaster_R_NEWANDIMPROVED.R" which was created November 29, 2018 after correcting GAMs and visuals with advice from Jared Wolfe
+
+LVDC3_Master_RawR_170329.csv is the version I used for a long time.
+Now switching to LVDC3_Master_RawR_180208.csv ... only difference is
+that I added a column for date, which has the interpolation from Jack Cornett's original spreadsheet
+very approximate, still waiting on dates from Peter.
+
+####Load packages
+```{r }
+
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(grid) #for function unit() in ggplot2
+library(gtable) #for adding subtitle in ggplot2
+library(ggthemes)
+library(scales) # to add percentages to plots and pretty_breaks()
+library(gridExtra) #for arranging graphs side by side w ftn grid.arrange()
+library(skimr)#Summary statistics
+library(reshape2)
+
+#load packages necessary for GAMS
+library("mgcv")
+library("scam")
+library("cowplot")
+library("grid")                         # for unit.pmax(), unit.list()
+library("schoenberg")
+library("tidyr")
+library("nlme")
+
+
+```
+
+##Plot themes
+```{r}
+library(ggthemes)
+library(ggplot2)
+library(ggpmisc)
+library(ggpubr)
+#Customize theme 
+#http://joeystanley.com/blog/custom-themes-in-ggplot2 
+theme_paleo <- function () { 
+  theme_base(base_size=8, base_family="Helvetica") %+replace% 
+    theme(
+      panel.background  = element_blank(),
+      plot.background = element_rect(fill="white", colour=NA),
+      plot.title=element_text(face="plain",hjust=0),
+      plot.subtitle = element_text(color="dimgrey", hjust=0, size=8),
+      axis.title=element_text(face="plain"),
+      panel.grid.minor=element_blank(),
+      strip.text.x = element_text(face="italic")
+    )
+}
+# , panel.grid.major=element_line(color="lightgrey")
+theme_set(theme_paleo())  # pre-set the bw theme
+```
+
+
+#SPDC1 Data Cleaning 
+
+```{r, echo=FALSE}
+SPDC1_raw <- read.csv("data/raw/SPDC1_RawR_171205_nmolorgC.csv")
+
+SPDC1_raw <- na.omit(SPDC1_raw)
+tbl_df(SPDC1_raw)
+#Converts data to tbl class. tbl’s are easier to examine than data frames.
+#R displays only the data that fits onscreen
+
+glimpse(SPDC1_raw) #quick view of the data
+# View(SPDC1_raw) #looks the same as before-- good, didn't fuck it up already
+
+#condence tbl to only include variables of interest
+#then create new variable chla_pheoa which adds chlorophyll a and pheo a together
+SPDC1_short <- SPDC1_raw %>%
+  mutate(chla_pheoa = chl_a + pheo_a,
+         chlb_pheob = chl_b + phaeo_b,
+         all_chl = chl_a + pheo_a + chl_ap,
+         all_diat = diato + diadino,
+         PI = chl_a/pheo_a,
+         UVR_index = sed_C/(allo+diato+lutein),
+         AD_ratio = allo/diato,
+         master_chl = (chl_a + chl_b)/(chl_ap+pheo_a+phaeo_b),
+         perc_chlb = (phaeo_b/pheo_a),
+         perc_diatox = (diato/chla_pheoa)) %>%
+  select(lake_ID:del15N, fuco, oscil, aphan, diadino, myxo, allo, diato,
+         lutein, cantha, b_car, chl_ap, echine, pheo_a, phaeo_b, chla_pheoa, chlb_pheob,
+         PI, UVR_index, all_chl, all_diat, AD_ratio,master_chl,perc_chlb,perc_diatox)
+glimpse(SPDC1_short) #it worked!!
+str(SPDC1_short)
+
+#calculate z-scores of d15N
+SPDC1_short$del15N_zscore<-scale(SPDC1_short$del15N, center = TRUE, scale = TRUE)
+
+
+
+
+```
+
+##Depth-age function
+```{r}
+# a simple function assuming a constant sedimentation rate, but in reality this
+# function will probably use the approx()
+# function given known age/depth values from 210Pb or other dating method.
+# http://apps.fishandwhistle.net/archives/1287
+depth_to_age_sky <- function(depth, sed_rate = 0.059, core_year = 2017) {
+  # sed_rate here is in cm/year
+  core_year - 1 / sed_rate * depth
+}
+SPDC1_short$age_sky<-depth_to_age_sky(SPDC1_short$depth_plot)
+#Sedimentation rate from Leavitt lab = 0.059 cm/year
+
+```
+
+##Wide to long
+```{r}
+#Convert SPDC1_short from wide to long
+SPDC1_long = melt(SPDC1_short, id.vars = c("lake_ID", "age_sky", "sample_ID", "sample_start_depth"),
+                  measure.vars = c("percC", "percN",
+                                   "CN", "del13C", "del15N", "fuco","oscil","aphan",
+                                   "diadino","myxo","allo","diato","lutein","cantha",
+                                   "b_car","chl_ap","echine","pheo_a","phaeo_b","chla_pheoa","chlb_pheob",
+                                   "PI","UVR_index","all_chl","all_diat","AD_ratio","master_chl","perc_chlb","perc_diatox","del15N_zscore")) %>%
+  arrange(desc(age_sky)) %>%
+  dplyr::rename(proxy_ID = variable, 
+         response = value)
+```
+
+## Diatoms
+```{r}
+
+taxon_category <- read.csv("data/raw/taxon_category.csv")
+diatoms_long_raw <- read.csv("data/raw/SPDC1_180808_diatomsquant_IAO_long.csv")
+
+diatoms_long_PB <- left_join(diatoms_long_raw,taxon_category, by="spp_ID")
+# write.csv(diatoms_long_PB, file="diatom_BP.csv")
+glimpse(diatoms_long_PB)
+
+diatoms_wide_PB <- dcast(diatoms_long_PB, INSTAAR_accession_num + PLANK_B ~ spp_ID, value.var="counts")
+
+diatoms_wide_withSPP <- diatoms_wide_PB %>%
+  mutate(total = select(., Achnanthidium:Tetracyclus) %>%
+           rowSums(na.rm=TRUE)) 
+
+diatoms_wide_PB <- diatoms_wide_withSPP %>%
+  select(INSTAAR_accession_num, PLANK_B, total)
+
+diatoms_wide_PB <- dcast(diatoms_wide_PB, INSTAAR_accession_num ~ PLANK_B, value.var="total") %>%
+  select(INSTAAR_accession_num, PLANK, B) %>%
+  mutate(BP = B/PLANK,
+         PB = PLANK/B) %>%
+  select(-PLANK, -B)
+
+diatom_metadata <- read.csv("/Users/solomonlab/Google Drive/Research (common)/Research/Data/Sediment Cores/SPDC1/R/diatom_metadata.csv")
+
+diatom_full <- left_join(diatom_metadata, diatoms_wide_PB, by="INSTAAR_accession_num")
+
+
+depth_to_age_sky_diatoms <- function(depth, sed_rate = 0.059, core_year = 2017) {
+  # sed_rate here is in cm/year
+  core_year - 1 / sed_rate * depth
+}
+diatom_full$age_sky<-depth_to_age_sky_diatoms(diatom_full$depth_plot)
+#Sedimentation rate from Leavitt lab = 0.059 cm/year
+```
+
+#### 2019-11-27 Explore diatoms...
+```{r}
+df1 <- diatom_full %>%
+  select(INSTAAR_accession_num, age_sky)
+
+specieswithdate<-left_join(diatoms_wide_withSPP, df1, by=c("INSTAAR_accession_num"))
+
+specieswithdate <- specieswithdate %>%
+  mutate(Stauroneis_spp = sum(Stauroneis + Staurosira + Staurosirella, na.rm=TRUE),
+         Karayevia_spp = sum(Karayevia + `Karayevia clevei`, na.rm=TRUE),
+         Fragilaria_spp = sum(Fragilaria + `Fragilaria crotonensis` + Fragilariforma, na.rm=TRUE)) %>%
+  select(-`None detected`)
+# write.csv(specieswithdate, file="data/output/specieswithdates.csv")
+### Had trouble getting the rows to sum so had to do a little manual excel data summary. Ugh.
+specieswithdate <- read.csv("/Users/solomonlab/Google Drive/Research (common)/Research/Data/R/paleo/data/output/specieswithdates.csv")
+
+B_P_separate<- specieswithdate %>%
+  filter(age_sky > 1850) %>%
+ggplot(aes(x=age_sky,y=total, shape=PLANK_B, color=PLANK_B))+
+  # annotate("rect", xmin=1850, xmax=2020, ymin=0, ymax=Inf, alpha=0.1, fill="grey10") +
+  geom_point(size=4) +
+  # geom_line(size=1)+
+  # geom_ribbon(aes(ymin = (lower), ymax = (upper), x = age_sky, group=lake_ID), alpha = 0.2, inherit.aes = FALSE, fill = "black") +
+  coord_cartesian(xlim=c(1850,2010))+
+  coord_cartesian(ylim=c(0,100))+
+  # scale_y_continuous(breaks=seq(0, 20, 4))+
+  scale_x_continuous(breaks=seq(1850, 2010, 50))+
+  scale_color_manual(
+    name="",
+    breaks=c("B","PLANK"),
+    labels=c("Benthic","Planktonic"),
+    values=c("#5e4fa2", "#f46d43"))+
+  scale_shape_manual(
+    name="",
+    breaks=c("B","PLANK"),
+    labels=c("Benthic","Planktonic"),
+    values = c(17, 19))+
+  labs(y="Total # valves counted", x="\nYear")+
+  theme(legend.position="bottom", legend.text = element_text(size=28))+
+  guides(shape = guide_legend(override.aes = list(size=10)),
+         color = guide_legend(override.aes = list(linetype = 0)))
+B_P_separate
+
+specieswithdate2 <- specieswithdate %>%
+  select(-c("Stauroneis", "Staurosira","Staurosirella",
+          "Nitzschia", "Nitzschia.dissipata",
+          "Karayevia","Karayevia.clevei",
+          "Fragilaria", "Fragilaria.crotonensis",
+          "Fragilariforma", "total"))
+specieswithdatelong = melt(specieswithdate2,
+                           id.vars = c("INSTAAR_accession_num", "age_sky","PLANK_B"),
+                           measure.vars = c("Achnanthidium", "Asterionella.formosa",
+                                            "Aulacoseira", "Cavinula", "Chamaepinnularia", "Cymbopleura",
+                                            "Encyonema", "Eolimna", "Eunotia",
+                                            "Genkalia","Gomphonema",
+                                            "Hantzschia", "Humidophila", 
+                                            "Luticola", "Mayamaea",
+                                            "Melosira.varians", "Navicula",
+                                            "Nupela", "Pinnularia", "Platessa",
+                                            "Psammothidium", "Rossithidium",
+                                            "Sellaphora", "Tetracyclus",
+                                            "Stauroneis_spp", "Karayevia_spp",
+                                            "Fragilaria_spp", "Nitzschia_spp" )) %>%
+  arrange(variable)
+
+
+# specieswithdatelong<-left_join(diatoms_long_PB, df1, by=c("INSTAAR_accession_num"))
+
+# unique(specieswithdatelong$variable)
+library(RColorBrewer)
+nb.cols <- 28
+mycolors <- colorRampPalette(brewer.pal(8, "Accent"))(nb.cols)
+# Create a ggplot with 18 colors 
+# Use scale_fill_manual
+ggplot(df) + 
+  geom_col(aes(name, Sepal.Length, fill = factor(Sepal.Length))) +
+  scale_fill_manual(values = mycolors) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+```
+
+###** MS supplemental figure
+```{r}
+
+specieswithdate_wide <- specieswithdate %>%
+  select("Achnanthidium", "Asterionella.formosa",
+            "Aulacoseira", "Cavinula", "Chamaepinnularia", "Cymbopleura",
+            "Encyonema", "Eolimna", 
+            "Genkalia", "Humidophila", 
+             "Pinnularia", 
+            "Psammothidium", 
+            "Sellaphora", 
+            "Stauroneis_spp", "Karayevia_spp",
+            "Fragilaria_spp", "Nitzschia_spp",
+         "INSTAAR_accession_num",
+         "age_sky",
+         "PLANK_B") %>%
+  rename("Asterionella formosa"="Asterionella.formosa",
+         "Stauroneis"="Stauroneis_spp",
+         "Karayevia"="Karayevia_spp",
+         "Fragilaria crotonensis"="Fragilaria_spp",
+         "Nitzschia"="Nitzschia_spp")
+
+
+specieswithdatelong = melt(specieswithdate_wide,
+                           id.vars = c("INSTAAR_accession_num", "age_sky","PLANK_B"),
+                           measure.vars = c("Achnanthidium", "Asterionella formosa",
+                                            "Aulacoseira", "Cavinula", "Chamaepinnularia", "Cymbopleura",
+                                            "Encyonema", "Eolimna",
+                                            "Genkalia", "Humidophila", 
+                                             "Pinnularia", 
+                                            "Sellaphora",
+                                            "Stauroneis", "Karayevia",
+                                            "Fragilaria crotonensis", "Nitzschia" ))
+
+
+
+specieswithdatalong_trim <- specieswithdatelong %>%
+  filter(PLANK_B != "NA")%>%
+  # mutate(is.numeric(as.integer()))%>%
+  filter(age_sky > 1850) %>%
+  mutate(value = na_if(value, "0"))
+str(specieswithdatalong_trim)
+
+
+
+specieswithdatalong_trim$variable <- factor(specieswithdatalong_trim$variable,
+                                 levels=c("Asterionella formosa",
+                                           "Aulacoseira",
+                                          "Fragilaria crotonensis",
+                                     "Stauroneis",
+                                          "Achnanthidium",
+                                          "Cavinula",
+                                          "Chamaepinnularia",
+                                          "Cymbopleura",
+                                           "Encyonema", "Eolimna",
+                                           "Genkalia", "Humidophila", 
+                                            "Pinnularia", 
+                                           "Sellaphora",
+                                          "Karayevia",
+                                            "Nitzschia"))
+#More of a time series
+specieswithdatalong_trim%>%
+ggplot(aes(x=age_sky,y=value, color=PLANK_B))+
+  geom_point(size=2.5, alpha=0.8) + 
+    coord_cartesian(xlim=c(1850,2020))+
+  scale_x_continuous(breaks=seq(1850, 2020, 50))+
+  scale_y_continuous(breaks=pretty_breaks(n=5))+
+  scale_color_manual(
+    name="",
+    breaks=c("B","PLANK"),
+    labels=c("Benthic","Planktonic"),
+    values=c("#5e4fa2", "#f46d43"))+
+  labs(y="Total # valves counted", x="Year")+
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle = 45, vjust=0.55))+
+  guides(shape = guide_legend(override.aes = list(size=50)),
+         color = guide_legend(override.aes = list(linetype = 0)))+
+  facet_wrap(variable~., ncol=4)
+
+
+
+
+#More like traditional paleo analyses
+
+paleo_diatoms<-specieswithdatalong_trim %>%
+  ggplot(aes(y = age_sky, x = value, color=PLANK_B )) +
+  geom_segment(aes(xend = 0, yend = age_sky), lwd = 1) +
+  facet_grid(.~variable, scales = "free_x", space = "free_x") +
+  scale_x_continuous(breaks = c(0, 25, 50, 75)) +
+  # scale_y_reverse() +
+  scale_color_manual(
+    name="",
+    breaks=c("B","PLANK"),
+    labels=c("Benthic","Planktonic"),
+    values=c("#5e4fa2", "#f46d43")) +
+  labs(x = "# valves counted", y = "Year") +
+  theme(strip.text.x = element_text(angle = 60, hjust = 0, vjust = 0), 
+        strip.background = element_blank(),
+        legend.position="bottom")
+
+paleo_diatoms
+
+# voodoo that makes it so that facet labels can overlap
+# https://stackoverflow.com/questions/49740215/ggplot-facet-grid-label-cut-off
+species_plot_grob <- ggplotGrob(paleo_diatoms)
+for(i in which(grepl("strip-t", species_plot_grob$layout$name))){
+  species_plot_grob$grobs[[i]]$layout$clip <- "off"
+}
+
+# needed to draw the modified plot_grob
+grid::grid.draw(species_plot_grob)
+
+ggsave("figures/MS/FigureSX.diatom_valve_counts_resubmission.jpg", width=18, height=18,units="in")
+
+```
+
+
+
+###** MS  figure - rel abundance
+```{r}
+
+specieswithdate_rel_abund_wide <- specieswithdate %>%
+  select("Achnanthidium", "Asterionella.formosa",
+            "Aulacoseira", "Cavinula", "Chamaepinnularia", "Cymbopleura",
+            "Encyonema", "Eolimna", 
+            "Genkalia", "Humidophila", 
+             "Pinnularia", 
+            "Psammothidium", 
+            "Sellaphora", 
+            "Stauroneis_spp", "Karayevia_spp",
+            "Fragilaria_spp", "Nitzschia_spp",
+         "INSTAAR_accession_num",
+         "age_sky",
+         "PLANK_B",
+         "total") %>%
+  rename("Asterionella formosa"="Asterionella.formosa",
+         "Stauroneis"="Stauroneis_spp",
+         "Karayevia"="Karayevia_spp",
+         "Fragilaria crotonensis"="Fragilaria_spp",
+         "Nitzschia"="Nitzschia_spp")
+
+
+
+specieswithdatelong_relabund = melt(specieswithdate_rel_abund_wide,
+                           id.vars = c("INSTAAR_accession_num", "age_sky","PLANK_B","total"),
+                           measure.vars = c("Achnanthidium", "Asterionella formosa",
+                                            "Aulacoseira", "Cavinula", "Chamaepinnularia", "Cymbopleura",
+                                            "Encyonema", "Eolimna",
+                                            "Genkalia", "Humidophila", 
+                                             "Pinnularia", 
+                                            "Sellaphora",
+                                            "Stauroneis", "Karayevia",
+                                            "Fragilaria crotonensis", "Nitzschia" )) %>%
+    filter(PLANK_B != "NA")%>%
+    filter(age_sky > 1850) %>%
+  mutate(value = na_if(value, "0"),
+         relAbund=(value/total)*100)
+str(specieswithdatelong_relabund)
+
+
+
+specieswithdatelong_relabund$variable <- factor(specieswithdatelong_relabund$variable,
+                                 levels=c("Asterionella formosa",
+                                           "Aulacoseira",
+                                          "Fragilaria crotonensis",
+                                     "Stauroneis",
+                                          "Achnanthidium",
+                                          "Cavinula",
+                                          "Chamaepinnularia",
+                                          "Cymbopleura",
+                                           "Encyonema", "Eolimna",
+                                           "Genkalia", "Humidophila", 
+                                            "Pinnularia", 
+                                           "Sellaphora",
+                                          "Karayevia",
+                                            "Nitzschia"))
+
+
+#More like traditional paleo analyses
+
+#Function for making my own pretty breaks
+breaks_fun <- function(x) {
+  if (max(x) < 20) {
+    seq(0, 20, 4)
+  } else {
+    seq(0, 100, 25)
+  }
+}
+
+paleo_diatoms<-specieswithdatelong_relabund %>%
+  ggplot(aes(y = age_sky, x = relAbund, color=PLANK_B )) +
+  geom_segment(aes(xend = 0, yend = age_sky), lwd = 1) +
+  facet_grid(.~variable, scales="free_x", space = "free_x") +
+  scale_y_continuous(breaks = c(1850,1875,1900,1925,1950,1975,2000)) +
+  scale_x_continuous(breaks=breaks_fun) +
+  scale_color_manual(
+    name="",
+    breaks=c("B","PLANK"),
+    labels=c("Benthic","Planktonic"),
+    values=c("#5e4fa2", "#f46d43")) +
+  labs(x = "Relative Abundance (%)", y = "Year") +
+  theme(strip.text.x = element_text(angle = 60, hjust = 0, vjust = 0), 
+        strip.background = element_blank(),
+        legend.position="bottom",
+        plot.margin=unit(c(0,1,1,0), "lines"),
+        # panel.spacing=grid::unit(0,"lines")
+        )
+
+paleo_diatoms
+
+# # voodoo that makes it so that facet labels can overlap
+# # https://stackoverflow.com/questions/49740215/ggplot-facet-grid-label-cut-off
+# species_plot_grob <- ggplotGrob(paleo_diatoms)
+# for(i in which(grepl("strip-t", species_plot_grob$layout$name))){
+#   species_plot_grob$grobs[[i]]$layout$clip <- "off"
+# }
+# 
+# # needed to draw the modified plot_grob
+# grid::grid.draw(species_plot_grob)
+# 
+# ggsave("figures/MS/FigureS5.diatom_relabundance_resubmission.jpg", width=8, height=5,units="in")
+
+
+png(
+  "figures/MS/FigureS5.diatom_relabundance_resubmission.png", 
+  width = 9, 
+  height = 3, 
+  res = 300,
+  units = "in"
+)
+species_plot_grob <- ggplotGrob(paleo_diatoms)
+for(i in which(grepl("strip-t", species_plot_grob$layout$name))){
+  species_plot_grob$grobs[[i]]$layout$clip <- "off"
+}
+
+# needed to draw the modified plot_grob
+grid::grid.draw(species_plot_grob)
+dev.off()
+```
+
+#LVDC3 Data Cleaning
+```{r}
+LVDC3_raw <- read.csv("data/raw/LVDC3_Master_RawR_180208.csv")
+
+LVDC3_raw <- na.omit(LVDC3_raw)
+tbl_df(LVDC3_raw)
+
+LVDC3_short <- LVDC3_raw %>%
+  mutate(chla_pheoa = chl_a + pheo_a,
+         chlb_pheob = chl_a + phaeo_b,
+         PI = chl_a/pheo_a,
+         UVR_index = sed_C/(allo+diato+lutein),
+         all_diat = diadino + diato,
+         AD_ratio = allo/diato,
+         all_chl = chl_ap + chl_a + pheo_a,
+         master_chl = (chl_a + chl_b)/(chl_ap + phaeo_b + pheo_a),
+         perc_chlb = (phaeo_b/pheo_a),
+         perc_diatox = (diato/chla_pheoa)) %>%
+  select(lake_ID, depth_plot:fuco, oscil, aphan, diadino, myxo, allo, diato, lutein, b_car, cantha, echine,
+         chl_ap, chl_b, chl_a, phaeo_b, pheo_a, PI, UVR_index, chla_pheoa, chlb_pheob,
+         all_diat, all_chl, percN, percC, master_chl, AD_ratio,perc_chlb,perc_diatox)
+glimpse(LVDC3_short) #it worked!!
+
+LVDC3_short$del15N_zscore<-scale(LVDC3_short$del15N, center = TRUE, scale = TRUE)
+
+```
+
+##Depth-age function
+```{r}
+
+depth_to_age_loch <- function(depth, sed_rate = 0.059, core_year = 2016) {
+  # sed_rate here is in cm/year
+  core_year - 1 / sed_rate * depth
+}
+LVDC3_short$age_sky<-depth_to_age_loch(LVDC3_short$depth_plot)
+```
+
+
+##Wide to long
+```{r}
+#Convert LVDC3_short from wide to long
+LVDC3_long = melt(LVDC3_short, id.vars = c("lake_ID", "age_sky", "sample_ID", "depth_plot"),
+                  measure.vars = c("percC", "percN",
+                                   "CN", "del13C", "del15N", "fuco","oscil","aphan",
+                                   "diadino","myxo","allo","diato","lutein","cantha",
+                                   "b_car","chl_ap","echine","pheo_a","phaeo_b","chla_pheoa","chlb_pheob",
+                                   "PI","UVR_index","all_chl","all_diat","AD_ratio","master_chl","perc_chlb","perc_diatox","del15N_zscore")) %>%
+  arrange(desc(age_sky)) %>%
+  dplyr::rename(proxy_ID = variable, #rename columns 
+         response = value,
+         sample_start_depth = depth_plot)
+str(LVDC3_long)
+str(SPDC1_long)
+
+```
+
+
+
+#Combine Loch & Sky to Data
+```{r}
+
+#Combine both Loch and Sky into one master dataset
+LVDC3_long_merge <- LVDC3_long %>%
+  select("lake_ID","age_sky","sample_start_depth","proxy_ID","response")
+SPDC1_long_merge <- SPDC1_long %>%
+  select("lake_ID","age_sky","sample_start_depth","proxy_ID","response")
+
+master_core_long <- bind_rows(LVDC3_long_merge, SPDC1_long_merge)
+
+#Specify lake_ID as factor
+master_core_long$lake_ID <- as.factor(master_core_long$lake_ID)
+
+#Convert master from long to wide
+master_core_wide <- dcast(master_core_long, lake_ID + age_sky + sample_start_depth ~ proxy_ID, value.var="response") 
+
+loch_wide <- master_core_wide %>%
+  filter(lake_ID=="TheLoch")
+
+sky_wide <- master_core_wide %>%
+  filter(lake_ID=="SkyPond")
+```
+
+
+#EXPORT
+
+```{r}
+
+write.csv(master_core_wide, file="data/output/master_core_wide.csv")
+write.csv(master_core_long, file="data/output/master_core_long.csv")
+write.csv(loch_wide, file="data/output/loch_wide.csv")
+write.csv(sky_wide, file="data/output/sky_wide")
+write.csv(diatom_full, "data/output/diatom_full.csv")
+
+```

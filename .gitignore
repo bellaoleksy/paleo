@@ -35,7 +35,7 @@ vignettes/*.pdf
 #results folder
 /results
 #raw data
-/raw
+raw/
 #Produced htmls from .Rmd docs
 *.html
 #Produced .docx

@@ -45,3 +45,5 @@ raw
 *.xlsx
 #Produced .pptx
 *.pptx
+#Tutorial
+*02_GAMs_tutorial.Rmd

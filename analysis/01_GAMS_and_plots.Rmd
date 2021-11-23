@@ -3976,26 +3976,34 @@ f_labels <- f_labels %>%
 periodsChange1 <- data.frame(proxy_ID=c("pheo_a", "phaeo_b", "diato"),
                             xmin=c(1896.039,1904.148,1914.283),
                             xmax=c(2013.610,1977.123,2013.610))
-periodsChange1 <- periodsChange %>%
+periodsChange1 <- periodsChange1 %>%
   mutate(proxy_ID=factor(proxy_ID,
                          levels= c("pheo_a", "phaeo_b", "diato"),
                          label = c("Pheophytin~italic(a)", "Pheophytin~italic(b)", "Diatoxanthin")))
 
 periodsChange2 <- data.frame(proxy_ID=c("pheo_a", "phaeo_b", "diato"),
-                            xmin=c(NA,1727.791,1914.283),
-                            xmax=c(NA,1819,2013.610))
-periodsChange2 <- periodsChange %>%
+                            xmin=c(NA,1727.791,1784.550),
+                            xmax=c(NA,1819,1891))
+periodsChange2 <- periodsChange2 %>%
   mutate(proxy_ID=factor(proxy_ID,
                          levels= c("pheo_a", "phaeo_b", "diato"),
                          label = c("Pheophytin~italic(a)", "Pheophytin~italic(b)", "Diatoxanthin")))
 
 tri_plot<-
-  ggplot(bind_CI,aes(x=age_sky,y=fit, color=proxy_ID))+
-  geom_rect(data = periodsChange, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-            alpha = 0.1, fill="grey50", inherit.aes = FALSE)+
-  geom_point(data=tri_long, mapping=aes(x=age_sky, y=response), size=2.5, alpha=0.7) +
-  geom_line(size=1)+
-  geom_ribbon(aes(ymin = (lower), ymax = (upper), x = age_sky, fill=proxy_ID), alpha = 0.5, inherit.aes = FALSE) +
+  ggplot(bind_CI,aes(x=age_sky,y=fit, color=proxy_ID, fill=proxy_ID))+
+  geom_rect(data = periodsChange1, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+            alpha = 0.3, fill="grey50", inherit.aes = FALSE)+
+    # geom_rect(data = periodsChange2, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    #         alpha = 0.1, fill="grey50", inherit.aes = FALSE)+
+
+    geom_line(size=1)+
+  # geom_ribbon(aes(ymin = (lower), ymax = (upper), x = age_sky, fill=proxy_ID),
+  #             alpha = 0.5, inherit.aes = FALSE,
+  #             outline.type="both",
+  #             linetype=0) +
+  geom_line(aes(y=lower,color=proxy_ID), linetype="dashed") + 
+  geom_line(aes(y=upper,color=proxy_ID), linetype="dashed") + 
+    geom_point(data=tri_long, mapping=aes(x=age_sky, y=response), size=2.5, shape=21, color="#000000") +
   scale_y_continuous(breaks=seq(0, 1500, 300))+
   scale_x_continuous(breaks=seq(1600, 2000, 50))+
   labs(y="",x="Year")+
@@ -4004,16 +4012,20 @@ tri_plot<-
   scale_fill_manual(values=c("#386641", "#a7c957","#d4a373"))+
   guides(shape = guide_legend(override.aes = list(size=10)),
          color = guide_legend(override.aes = list(linetype = 0)))+
-  theme_pubr()+
+  theme_pubr(base_size = 10)+
   facet_wrap(~proxy_ID,strip.position="right",
              nrow=3,labeller=label_parsed,
              scales="free_y")+
     theme(legend.position="none",
-        axis.title.y=element_blank())
+        axis.title.y=element_blank(),
+        strip.background = element_rect(fill="#FFFFFF"))
 
 #Add y-axis label with special characters
-annotate_figure(tri_plot,
+tri_plot<-annotate_figure(tri_plot,
                 left = text_grob(expression(Pigment~concentration~(nmol*~g^-1~organic~carbon)),
                                  color = "black", face="bold", size=12, rot = 90)
 )
+tri_plot
+ggsave("figures/talks/top3_pigmentindicators.png", tri_plot,width=6, height=6,units="in", dpi=600)
+
 ```

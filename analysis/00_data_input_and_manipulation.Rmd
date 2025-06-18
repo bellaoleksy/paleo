@@ -74,7 +74,7 @@ theme_set(theme_paleo())  # pre-set the bw theme
 SPDC1_raw <- read.csv("data/raw/SPDC1_RawR_171205_nmolorgC.csv")
 
 SPDC1_raw <- na.omit(SPDC1_raw)
-tbl_df(SPDC1_raw)
+tibble::as_tibble(SPDC1_raw)
 #Converts data to tbl class. tbl’s are easier to examine than data frames.
 #R displays only the data that fits onscreen
 
@@ -94,7 +94,7 @@ SPDC1_short <- SPDC1_raw %>%
          master_chl = (chl_a + chl_b)/(chl_ap+pheo_a+phaeo_b),
          perc_chlb = (phaeo_b/pheo_a),
          perc_diatox = (diato/chla_pheoa)) %>%
-  select(lake_ID:del15N, fuco, oscil, aphan, diadino, myxo, allo, diato,
+  select(sample_start_depth, depth_plot, depth_range, sample_ID, lake_ID:del15N, fuco, oscil, aphan, diadino, myxo, allo, diato,
          lutein, cantha, b_car, chl_ap, echine, pheo_a, phaeo_b, chla_pheoa, chlb_pheob,
          PI, UVR_index, all_chl, all_diat, AD_ratio,master_chl,perc_chlb,perc_diatox)
 glimpse(SPDC1_short) #it worked!!
@@ -121,6 +121,10 @@ depth_to_age_sky <- function(depth, sed_rate = 0.059, core_year = 2017) {
 SPDC1_short$age_sky<-depth_to_age_sky(SPDC1_short$depth_plot)
 #Sedimentation rate from Leavitt lab = 0.059 cm/year
 
+#Make a dataframe of just ages and depths for Anna
+sky_export <- SPDC1_short %>%
+  select(sample_start_depth:lake_ID, age_sky, percN)
+write_csv(sky_export, "data/output/sky_depths_dates.csv")
 ```
 
 ##Wide to long
@@ -502,7 +506,7 @@ dev.off()
 LVDC3_raw <- read.csv("data/raw/LVDC3_Master_RawR_180208.csv")
 
 LVDC3_raw <- na.omit(LVDC3_raw)
-tbl_df(LVDC3_raw)
+as_tibble(LVDC3_raw)
 
 LVDC3_short <- LVDC3_raw %>%
   mutate(chla_pheoa = chl_a + pheo_a,
@@ -515,7 +519,8 @@ LVDC3_short <- LVDC3_raw %>%
          master_chl = (chl_a + chl_b)/(chl_ap + phaeo_b + pheo_a),
          perc_chlb = (phaeo_b/pheo_a),
          perc_diatox = (diato/chla_pheoa)) %>%
-  select(lake_ID, depth_plot:fuco, oscil, aphan, diadino, myxo, allo, diato, lutein, b_car, cantha, echine,
+  select(depth_plot, depth_range, sample_ID, 
+         lake_ID, depth_plot:fuco, oscil, aphan, diadino, myxo, allo, diato, lutein, b_car, cantha, echine,
          chl_ap, chl_b, chl_a, phaeo_b, pheo_a, PI, UVR_index, chla_pheoa, chlb_pheob,
          all_diat, all_chl, percN, percC, master_chl, AD_ratio,perc_chlb,perc_diatox)
 glimpse(LVDC3_short) #it worked!!
@@ -532,6 +537,11 @@ depth_to_age_loch <- function(depth, sed_rate = 0.059, core_year = 2016) {
   core_year - 1 / sed_rate * depth
 }
 LVDC3_short$age_sky<-depth_to_age_loch(LVDC3_short$depth_plot)
+
+#Make a dataframe of just ages and depths for 
+loch_export <- LVDC3_short %>%
+  select(depth_plot:lake_ID, age_sky, percN)
+write_csv(loch_export, "data/output/loch_depths_dates.csv")
 ```
 
 

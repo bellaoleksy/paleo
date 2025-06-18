@@ -20,6 +20,8 @@ very approximate, still waiting on dates from Peter.
 
 I didn't transfer over a lot of the exploratory stuff, like the PCAs, just so you know. 
 
+I shared this tutorial with July on 2025/06/18
+
 # Load 
 ### Packages
 ```{r }
